@@ -7,34 +7,47 @@ import (
 )
 
 type Mux struct {
-	handlers map[MessageType]func([]byte, io.Writer) error
+	handlers map[MessageType]func([]byte) error
 }
 
 func NewMux() *Mux {
-	return &Mux{handlers: make(map[MessageType]func([]byte, io.Writer) error)}
+	return &Mux{handlers: make(map[MessageType]func([]byte) error)}
 }
 
-func MuxRegister[B Body](m *Mux, t MessageType, h func(Message[B], io.Writer)) {
-	m.handlers[t] = func(raw []byte, out io.Writer) error {
+func MuxRegister[B Body](m *Mux, t MessageType, h func(Message[B]) error) {
+	m.handlers[t] = func(raw []byte) error {
 		var msg Message[B]
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			return fmt.Errorf("unmarshal message: %w", err)
 		}
-		h(msg, out)
-		return nil
+		return h(msg)
 	}
 }
 
-func (m *Mux) Handle(raw []byte, out io.Writer) error {
-	var base Message[BaseBody]
-	if err := json.Unmarshal(raw, &base); err != nil {
-		return fmt.Errorf("unmarshal base: %w", err)
+func MuxHandle[B Body](m *Mux, msg Message[B], out io.Writer) error {
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal message: %w", err)
 	}
-	h, ok := m.handlers[base.Body.Type]
+	return m.HandleRaw(raw, out)
+}
+
+func (m *Mux) HandleRaw(raw []byte, out io.Writer) error {
+	var env struct {
+		Body struct {
+			Type MessageType `json:"type"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return fmt.Errorf("unmarshal message type: %w", err)
+	}
+	h, ok := m.handlers[env.Body.Type]
 	if !ok {
-		return fmt.Errorf("unknown message type: %s", base.Body.Type)
+		return fmt.Errorf("unknown message type: %s", env.Body.Type)
 	}
-	return h(raw, out)
+	return h(raw)
 }
 
-func NoOpHandler[B Body](_ Message[B], _ io.Writer) {}
+func NoOpHandler[B Body](_ Message[B]) error {
+	return nil
+}

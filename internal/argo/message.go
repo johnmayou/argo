@@ -1,7 +1,9 @@
 package argo
 
 type Body interface {
-	isBody()
+	GetType() MessageType
+	GetID() *int
+	GetInReplyTo() *int
 }
 
 type Message[B Body] struct {
@@ -18,4 +20,6 @@ type BaseBody struct {
 	InReplyTo *int        `json:"in_reply_to"`
 }
 
-func (b BaseBody) isBody() {}
+func (b BaseBody) GetType() MessageType { return b.Type }
+func (b BaseBody) GetID() *int          { return b.ID }
+func (b BaseBody) GetInReplyTo() *int   { return b.InReplyTo }

@@ -2,14 +2,16 @@ package argo
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"os"
 )
 
 type Node interface {
-	Handle(raw []byte, out io.Writer)
+	Handle(raw []byte)
 }
 
 const (
@@ -28,17 +30,19 @@ type InitOkBody struct {
 }
 
 func MainLoop[N Node](
-	factory func(Message[InitBody]) N,
-	in io.Reader,
-	out io.Writer,
+	factory func(context.Context, Message[InitBody], io.Writer) N,
 ) {
-	if err := Loop(factory, in, out); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := Loop(ctx, factory, os.Stdin, os.Stdout); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func Loop[N Node](
-	factory func(Message[InitBody]) N,
+	ctx context.Context,
+	factory func(context.Context, Message[InitBody], io.Writer) N,
 	in io.Reader,
 	out io.Writer,
 ) error {
@@ -66,9 +70,9 @@ func Loop[N Node](
 		},
 	})
 
-	node := factory(init)
+	node := factory(ctx, init, out)
 	for scanner.Scan() {
-		node.Handle(scanner.Bytes(), out)
+		node.Handle(scanner.Bytes())
 	}
 
 	if err := scanner.Err(); err != nil {

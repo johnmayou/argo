@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
-	"os"
 
 	"github.com/johnmayou/argo/internal/argo"
 )
@@ -24,14 +24,18 @@ type EchoOkBody struct {
 }
 
 type EchoNode struct {
+	Ctx    context.Context
 	NodeID string
 	Mux    *argo.Mux
+	Out    io.Writer
 }
 
-func NewEchoNode(init argo.Message[argo.InitBody]) *EchoNode {
+func NewEchoNode(ctx context.Context, init argo.Message[argo.InitBody], out io.Writer) *EchoNode {
 	n := &EchoNode{
+		Ctx:    ctx,
 		NodeID: init.Body.NodeID,
 		Mux:    argo.NewMux(),
+		Out:    out,
 	}
 
 	argo.MuxRegister(n.Mux, Echo, n.handleEcho)
@@ -40,12 +44,12 @@ func NewEchoNode(init argo.Message[argo.InitBody]) *EchoNode {
 	return n
 }
 
-func (n *EchoNode) Handle(raw []byte, out io.Writer) {
-	n.Mux.Handle(raw, out)
+func (n *EchoNode) Handle(raw []byte) {
+	n.Mux.HandleRaw(raw, n.Out)
 }
 
-func (n *EchoNode) handleEcho(msg argo.Message[EchoBody], out io.Writer) {
-	json.NewEncoder(out).Encode(argo.Message[EchoOkBody]{
+func (n *EchoNode) handleEcho(msg argo.Message[EchoBody]) error {
+	json.NewEncoder(n.Out).Encode(argo.Message[EchoOkBody]{
 		Src: msg.Dst,
 		Dst: msg.Src,
 		Body: EchoOkBody{
@@ -57,8 +61,10 @@ func (n *EchoNode) handleEcho(msg argo.Message[EchoBody], out io.Writer) {
 			Echo: msg.Body.Echo,
 		},
 	})
+
+	return nil
 }
 
 func main() {
-	argo.MainLoop(NewEchoNode, os.Stdin, os.Stdout)
+	argo.MainLoop(NewEchoNode)
 }

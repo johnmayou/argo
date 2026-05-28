@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"io"
-	"os"
 	"strconv"
 
 	"github.com/johnmayou/argo/internal/argo"
@@ -24,16 +24,20 @@ type GenerateOkBody struct {
 }
 
 type UniqueIdsNode struct {
+	Ctx    context.Context
 	NodeID string
 	Mux    *argo.Mux
+	Out    io.Writer
 
 	counter int
 }
 
-func NewUniqueIdsNode(init argo.Message[argo.InitBody]) *UniqueIdsNode {
+func NewUniqueIdsNode(ctx context.Context, init argo.Message[argo.InitBody], out io.Writer) *UniqueIdsNode {
 	n := &UniqueIdsNode{
+		Ctx:    ctx,
 		NodeID: init.Body.NodeID,
 		Mux:    argo.NewMux(),
+		Out:    out,
 	}
 
 	argo.MuxRegister(n.Mux, Generate, n.handleGenerate)
@@ -42,12 +46,12 @@ func NewUniqueIdsNode(init argo.Message[argo.InitBody]) *UniqueIdsNode {
 	return n
 }
 
-func (n *UniqueIdsNode) Handle(raw []byte, out io.Writer) {
-	n.Mux.Handle(raw, out)
+func (n *UniqueIdsNode) Handle(raw []byte) {
+	n.Mux.HandleRaw(raw, n.Out)
 }
 
-func (n *UniqueIdsNode) handleGenerate(msg argo.Message[GenerateBody], out io.Writer) {
-	json.NewEncoder(out).Encode(argo.Message[GenerateOkBody]{
+func (n *UniqueIdsNode) handleGenerate(msg argo.Message[GenerateBody]) error {
+	json.NewEncoder(n.Out).Encode(argo.Message[GenerateOkBody]{
 		Src: msg.Dst,
 		Dst: msg.Src,
 		Body: GenerateOkBody{
@@ -59,9 +63,12 @@ func (n *UniqueIdsNode) handleGenerate(msg argo.Message[GenerateBody], out io.Wr
 			ID: n.NodeID + strconv.Itoa(n.counter),
 		},
 	})
+
 	n.counter += 1
+
+	return nil
 }
 
 func main() {
-	argo.MainLoop(NewUniqueIdsNode, os.Stdin, os.Stdout)
+	argo.MainLoop(NewUniqueIdsNode)
 }

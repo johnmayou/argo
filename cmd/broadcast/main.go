@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
-	"os"
+	"slices"
+	"time"
 
 	"github.com/johnmayou/argo/internal/argo"
+	"github.com/johnmayou/argo/internal/hashset"
 )
 
 const (
@@ -15,6 +19,7 @@ const (
 	ReadOk      argo.MessageType = "read_ok"
 	Topology    argo.MessageType = "topology"
 	TopologyOk  argo.MessageType = "topology_ok"
+	Gossip      argo.MessageType = "gossip"
 )
 
 type BroadcastBody struct {
@@ -37,23 +42,37 @@ type ReadOkBody struct {
 
 type TopologyBody struct {
 	argo.BaseBody
+	Topology map[string][]string `json:"topology"`
 }
 
 type TopologyOkBody struct {
 	argo.BaseBody
 }
 
-type BroadcastNode struct {
-	NodeID   string
-	Mux      *argo.Mux
-	Messages []int
+type GossipBody struct {
+	argo.BaseBody
+	Seen []int `json:"seen"`
 }
 
-func NewBroadcastNode(init argo.Message[argo.InitBody]) *BroadcastNode {
+type BroadcastNode struct {
+	Ctx          context.Context
+	NodeID       string
+	Mux          *argo.Mux
+	Neighborhood []string
+	Messages     *hashset.HashSet[int]
+	Known        map[string]*hashset.HashSet[int]
+	Out          io.Writer
+}
+
+func NewBroadcastNode(ctx context.Context, init argo.Message[argo.InitBody], out io.Writer) *BroadcastNode {
 	n := &BroadcastNode{
-		NodeID:   init.Body.NodeID,
-		Mux:      argo.NewMux(),
-		Messages: make([]int, 0),
+		Ctx:          ctx,
+		NodeID:       init.Body.NodeID,
+		Mux:          argo.NewMux(),
+		Neighborhood: make([]string, 0),
+		Messages:     hashset.NewHashSet[int](),
+		Known:        make(map[string]*hashset.HashSet[int]),
+		Out:          out,
 	}
 
 	argo.MuxRegister(n.Mux, Broadcast, n.handleBroadcast)
@@ -62,18 +81,61 @@ func NewBroadcastNode(init argo.Message[argo.InitBody]) *BroadcastNode {
 	argo.MuxRegister(n.Mux, ReadOk, argo.NoOpHandler[ReadOkBody])
 	argo.MuxRegister(n.Mux, Topology, n.handleTopology)
 	argo.MuxRegister(n.Mux, TopologyOk, argo.NoOpHandler[TopologyOkBody])
+	argo.MuxRegister(n.Mux, Gossip, n.handleGossip)
+
+	n.InitNeighborGossip()
 
 	return n
 }
 
-func (n *BroadcastNode) Handle(raw []byte, out io.Writer) {
-	n.Mux.Handle(raw, out)
+func (n *BroadcastNode) InitNeighborGossip() {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-n.Ctx.Done():
+				return
+			case <-ticker.C:
+				for _, neiID := range n.Neighborhood {
+					var seen []int
+					known, ok := n.Known[neiID]
+					if ok {
+						for msg := range n.Messages.Values() {
+							if !known.Contains(msg) {
+								seen = append(seen, msg)
+							}
+						}
+					} else {
+						seen = slices.Collect(n.Messages.Values())
+					}
+					msg := argo.Message[GossipBody]{
+						Src: n.NodeID,
+						Dst: neiID,
+						Body: GossipBody{
+							BaseBody: argo.BaseBody{
+								Type:      Gossip,
+								ID:        nil,
+								InReplyTo: nil,
+							},
+							Seen: seen,
+						},
+					}
+					argo.MuxHandle(n.Mux, msg, n.Out)
+				}
+			}
+		}
+	}()
 }
 
-func (n *BroadcastNode) handleBroadcast(msg argo.Message[BroadcastBody], out io.Writer) {
-	n.Messages = append(n.Messages, msg.Body.Message)
+func (n *BroadcastNode) Handle(raw []byte) {
+	n.Mux.HandleRaw(raw, n.Out)
+}
 
-	json.NewEncoder(out).Encode(argo.Message[BroadcastOkBody]{
+func (n *BroadcastNode) handleBroadcast(msg argo.Message[BroadcastBody]) error {
+	n.Messages.Add(msg.Body.Message)
+
+	json.NewEncoder(n.Out).Encode(argo.Message[BroadcastOkBody]{
 		Src: msg.Dst,
 		Dst: msg.Src,
 		Body: BroadcastOkBody{
@@ -84,10 +146,12 @@ func (n *BroadcastNode) handleBroadcast(msg argo.Message[BroadcastBody], out io.
 			},
 		},
 	})
+
+	return nil
 }
 
-func (n *BroadcastNode) handleRead(msg argo.Message[ReadBody], out io.Writer) {
-	json.NewEncoder(out).Encode(argo.Message[ReadOkBody]{
+func (n *BroadcastNode) handleRead(msg argo.Message[ReadBody]) error {
+	json.NewEncoder(n.Out).Encode(argo.Message[ReadOkBody]{
 		Src: msg.Dst,
 		Dst: msg.Src,
 		Body: ReadOkBody{
@@ -96,13 +160,21 @@ func (n *BroadcastNode) handleRead(msg argo.Message[ReadBody], out io.Writer) {
 				ID:        msg.Body.ID,
 				InReplyTo: msg.Body.ID,
 			},
-			Messages: n.Messages,
+			Messages: slices.Collect(n.Messages.Values()),
 		},
 	})
+
+	return nil
 }
 
-func (n *BroadcastNode) handleTopology(msg argo.Message[TopologyBody], out io.Writer) {
-	json.NewEncoder(out).Encode(argo.Message[TopologyOkBody]{
+func (n *BroadcastNode) handleTopology(msg argo.Message[TopologyBody]) error {
+	topology, ok := msg.Body.Topology[n.NodeID]
+	if !ok {
+		return fmt.Errorf("no topology found for node")
+	}
+	n.Neighborhood = topology
+
+	json.NewEncoder(n.Out).Encode(argo.Message[TopologyOkBody]{
 		Src: msg.Dst,
 		Dst: msg.Src,
 		Body: TopologyOkBody{
@@ -113,8 +185,24 @@ func (n *BroadcastNode) handleTopology(msg argo.Message[TopologyBody], out io.Wr
 			},
 		},
 	})
+
+	return nil
+}
+
+func (n *BroadcastNode) handleGossip(msg argo.Message[GossipBody]) error {
+	if _, ok := n.Known[msg.Src]; !ok {
+		n.Known[msg.Src] = hashset.NewHashSet[int]()
+	}
+	known := n.Known[msg.Src]
+
+	for _, message := range msg.Body.Seen {
+		n.Messages.Add(message)
+		known.Add(message)
+	}
+
+	return nil
 }
 
 func main() {
-	argo.MainLoop(NewBroadcastNode, os.Stdin, os.Stdout)
+	argo.MainLoop(NewBroadcastNode)
 }
