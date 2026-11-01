@@ -109,7 +109,7 @@ func (n *BroadcastNode) InitNeighborGossip() {
 					} else {
 						seen = slices.Collect(n.Messages.Values())
 					}
-					msg := argo.Message[GossipBody]{
+					json.NewEncoder(n.Out).Encode(argo.Message[GossipBody]{
 						Src: n.NodeID,
 						Dst: neiID,
 						Body: GossipBody{
@@ -120,8 +120,7 @@ func (n *BroadcastNode) InitNeighborGossip() {
 							},
 							Seen: seen,
 						},
-					}
-					argo.MuxHandle(n.Mux, msg, n.Out)
+					})
 				}
 			}
 		}

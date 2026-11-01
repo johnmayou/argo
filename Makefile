@@ -19,7 +19,7 @@ broadcast-1:
 	go build -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 1 --time-limit 20 --rate 10
 
-.PHONY: broadcast-1
+.PHONY: broadcast-2
 broadcast-2:
 	go build -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 5 --time-limit 20 --rate 10
