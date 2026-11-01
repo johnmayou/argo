@@ -23,3 +23,8 @@ broadcast-1:
 broadcast-2:
 	go build -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 5 --time-limit 20 --rate 10
+
+.PHONY: broadcast-3
+broadcast-3:
+	go build -o ./bin/broadcast ./cmd/broadcast
+	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 5 --time-limit 20 --rate 10 --nemesis partition

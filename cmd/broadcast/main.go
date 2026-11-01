@@ -97,34 +97,38 @@ func (n *BroadcastNode) InitNeighborGossip() {
 			case <-n.Ctx.Done():
 				return
 			case <-ticker.C:
-				for _, neiID := range n.Neighborhood {
-					var seen []int
-					known, ok := n.Known[neiID]
-					if ok {
-						for msg := range n.Messages.Values() {
-							if !known.Contains(msg) {
-								seen = append(seen, msg)
-							}
-						}
-					} else {
-						seen = slices.Collect(n.Messages.Values())
-					}
-					json.NewEncoder(n.Out).Encode(argo.Message[GossipBody]{
-						Src: n.NodeID,
-						Dst: neiID,
-						Body: GossipBody{
-							BaseBody: argo.BaseBody{
-								Type:      Gossip,
-								ID:        nil,
-								InReplyTo: nil,
-							},
-							Seen: seen,
-						},
-					})
-				}
+				n.gossip()
 			}
 		}
 	}()
+}
+
+func (n *BroadcastNode) gossip() {
+	for _, neiID := range n.Neighborhood {
+		var seen []int
+		known, ok := n.Known[neiID]
+		if ok {
+			for msg := range n.Messages.Values() {
+				if !known.Contains(msg) {
+					seen = append(seen, msg)
+				}
+			}
+		} else {
+			seen = slices.Collect(n.Messages.Values())
+		}
+		json.NewEncoder(n.Out).Encode(argo.Message[GossipBody]{
+			Src: n.NodeID,
+			Dst: neiID,
+			Body: GossipBody{
+				BaseBody: argo.BaseBody{
+					Type:      Gossip,
+					ID:        nil,
+					InReplyTo: nil,
+				},
+				Seen: seen,
+			},
+		})
+	}
 }
 
 func (n *BroadcastNode) Handle(raw []byte) {
