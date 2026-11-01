@@ -36,7 +36,16 @@ Each challenge lives under `cmd/<name>/` and compiles to `bin/<name>`.
 
 ## Maelstrom
 
-The Maelstrom binary is bundled at `./maelstrom/maelstrom`. See the [protocol docs](https://github.com/jepsen-io/maelstrom/blob/main/doc/protocol.md) for message format details.
+The Make targets expect Maelstrom at `./maelstrom/maelstrom`. It's gitignored, so download it into the repo root:
+
+```sh
+curl -L https://github.com/jepsen-io/maelstrom/releases/latest/download/maelstrom.tar.bz2 | tar xj
+./maelstrom/maelstrom --help
+```
+
+Requires Java and gnuplot. The `abs` warnings on startup are harmless.
+
+See the [protocol docs](https://github.com/jepsen-io/maelstrom/blob/main/doc/protocol.md) for message format details.
 
 ## Make Targets
 
