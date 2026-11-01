@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/johnmayou/argo/internal/argo"
@@ -62,6 +63,7 @@ type BroadcastNode struct {
 	Messages     *hashset.HashSet[int]
 	Known        map[string]*hashset.HashSet[int]
 	Out          io.Writer
+	mu           sync.Mutex
 }
 
 func NewBroadcastNode(ctx context.Context, init argo.Message[argo.InitBody], out io.Writer) *BroadcastNode {
@@ -104,6 +106,9 @@ func (n *BroadcastNode) InitNeighborGossip() {
 }
 
 func (n *BroadcastNode) gossip() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	for _, neiID := range n.Neighborhood {
 		var seen []int
 		known, ok := n.Known[neiID]
@@ -132,6 +137,9 @@ func (n *BroadcastNode) gossip() {
 }
 
 func (n *BroadcastNode) Handle(raw []byte) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
 	n.Mux.HandleRaw(raw, n.Out)
 }
 
