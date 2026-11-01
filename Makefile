@@ -6,25 +6,25 @@ serve:
 
 .PHONY: echo
 echo:
-	go build -o ./bin/echo ./cmd/echo
+	go build -race -o ./bin/echo ./cmd/echo
 	$(MAELSTROM_BIN) test -w echo --bin ./bin/echo --node-count 1 --time-limit 10
 
 .PHONY: unique-ids
 unique-ids:
-	go build -o ./bin/unique-ids ./cmd/unique-ids
+	go build -race -o ./bin/unique-ids ./cmd/unique-ids
 	$(MAELSTROM_BIN) test -w unique-ids --bin ./bin/unique-ids --time-limit 30 --rate 1000 --node-count 3 --availability total --nemesis partition
 
 .PHONY: broadcast-1
 broadcast-1:
-	go build -o ./bin/broadcast ./cmd/broadcast
+	go build -race -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 1 --time-limit 20 --rate 10
 
 .PHONY: broadcast-2
 broadcast-2:
-	go build -o ./bin/broadcast ./cmd/broadcast
+	go build -race -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 5 --time-limit 20 --rate 10
 
 .PHONY: broadcast-3
 broadcast-3:
-	go build -o ./bin/broadcast ./cmd/broadcast
+	go build -race -o ./bin/broadcast ./cmd/broadcast
 	$(MAELSTROM_BIN) test -w broadcast --bin ./bin/broadcast --node-count 5 --time-limit 20 --rate 10 --nemesis partition
